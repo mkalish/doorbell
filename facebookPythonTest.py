@@ -7,10 +7,9 @@ import urllib
 import cv2
 import Image
 import faceRecognizerTrainer
+from urlparse import urlparse, parse_qs
 
-
-
-access_token = 'CAACrZAWorZACkBAEIBbZBuU955zoZCfyQCSDZCTsDzfyFjQvtEjQBfQLrhB5bjCnUXV7rw8ZB7YHg1ennV0XfTaQ4uZCve6uxKYbPtOqWNlO5bMvTXx5EQVcWZBK4naA1ncz9lDVRxfRQZBboaxj1HSYftUmr9iEzIFFkYrn2T9HMKULHjqsnRba3ZAD5f5ENtAVoZD'
+access_token = 'CAACrZAWorZACkBAJvtCHzJhBlmZCILGeuP1K7i7pUUBKhsgYzOHowNaujFasnoOcKGOvx3wmO6BPnEqs8UHZA3qa1fdBP2v6htuZCt0kk8k85XiEtz1V79KN0kbHHSrspMgjYmMXZCwTCg12TVWvfdzO5FdGXZCpZBwCuXVUxtK9AHZBhWBXh85zbF2KdmXpZBzboZD'
 
 
 def match_face_to_tag(face, tags):
@@ -33,13 +32,20 @@ cascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
 temporary_data="data/temp"
 
 
-def get_photos_and_tags():
+def get_photos_and_tags(until=None, limit=None):
 
 	graph = facebook.GraphAPI(access_token)
-
+	args={'fields':'tags.fields(name,x,y),source, height, width'}
+	
+	if until and limit:
+		#print until
+		#print limit
+		args['limit'] = str(limit)
+		args['until'] = str(until)	
+	print args
 	photos_and_tags = graph.request(
 		path = "/me/photos",
-		args={'fields':'tags.fields(name,x,y),source, height, width'}
+		args=args
 	)
 
 	return photos_and_tags	
@@ -108,30 +114,60 @@ else:
 
 '''
 
-if __name__ == "__main__":
-	photos_and_tags = get_photos_and_tags()['data']
-
-		
+def process_facebook_data(photos_and_tags):
 	for photo in photos_and_tags:
-		if 'tags' in photo:
-			tags = photo['tags']
-			source = photo['source']
+                        if 'tags' in photo:
+                                tags = photo['tags']
+                                source = photo['source']
+
+
+                                faces = process_image_for_faces(source)
+                                if len(faces) == 0:
+                                        print 'No faces found continuing'
+                                        clean_up()
+                                        continue
+                                else:
+                                        processedTags = process_tags(tags['data'], photo['width'], photo['height'])
+                                        for face in faces:
+                                                image = cv2.imread(temporary_data+"/temp.jpg")
+                                                matched_faces = match_face_to_tag(face, processedTags)
+                                                for face, name in matched_faces:
+                                                        clean_name = "".join(name.split())
+                                                        path = "data/friends/"+clean_name
+                                                        if not os.path.exists(path):
+                                                                print 'adding directory'
+                                                                os.mkdir(path)
+                                                        nr_of_pics = len(os.listdir(path))
+                                                        x1, y1, x2, y2 = face
+                                                        cropped_face = faceRecognizerTrainer.to_grayscale(image[y1:y1+y2, x1:x1+x2])
+                                                        cv2.imwrite(path+"/pic_"+str(nr_of_pics)+".pgm", cropped_face)
+
+
+if __name__ == "__main__":
+	
+
+	results = get_photos_and_tags()
+	photos_and_tags = results['data']
+	next_page = results['paging']['next']
+
+	while True:
+		process_facebook_data(photos_and_tags)
+		
+		fields = parse_qs(urlparse(next_page).query, '&')
+		until = fields['until'][0]
+		limit = fields['limit'][0]
+		
+		results = get_photos_and_tags(until, limit)
+
+		if not results['paging']['next']:
+			process_facebook_data(results['data'])
+			print 'done'
+			break
+		else:
+			process_facebook_data(results['data'])
+			next_page = results['paging']['next']
 			
-			
-			faces = process_image_for_faces(source)
-			if len(faces) == 0:
-				print 'No faces found continuing'
-				clean_up()
-				continue
-			else:
-				processedTags = process_tags(tags['data'], photo['width'], photo['height'])
-				for face in faces:
-					image = cv2.imread(temporary_data+"/temp.jpg")
-					matched_faces = match_face_to_tag(face, processedTags)
-					for face, name in matched_faces:
-						if !os.dir.exists("/data/"+name):
-							os.mkdir("/data/"+name):
-			#print source
-			#processedTags = process_tags(tags['data'], photo['width'], photo['height'])
-			#print processedTags
+
+
+
 
